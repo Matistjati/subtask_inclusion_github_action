@@ -48,11 +48,6 @@ summary_path = Path("summary.md")
 if summary_path.exists():
     summary_path.unlink()
 
-print("HELLO IM RUNNIONG")
-
-for file in Path(__file__).parent.glob('*'):
-    print(file)
-
 def write_log(*args):
     with log_file.open("a") as f:
         f.write(f"{' '.join(args)}\n")
@@ -244,13 +239,10 @@ def validate_problem(problem: Path):
         write_pretty_output(orange("MISSES:" + str(count_word_occurrences("MISS", removed_sample))))
     
 
+
 def discover_problems():
-    problems = []
     base_path = Path(__file__).parent
-    for entry in base_path.iterdir():
-        if entry.is_dir() and (entry / 'problem.yaml').exists():
-            problems.append(entry)
-    return problems
+    return [p.parent for p in base_path.rglob('problem.yaml')]
 
 for problem in discover_problems():
     validate_problem(problem)
