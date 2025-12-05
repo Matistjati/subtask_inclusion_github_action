@@ -7,6 +7,10 @@ group using symlinks or `include_group` if you're using testdata_tools, or tight
 to validate, such as "the input is generated uniformly at random", in which case you have to live with the false positive. The sample column will also frequently
 contain false positives.
 
+To add this to your problem repository, simply create the file `.github/workflows/ci.yaml`, and copy the contents of `ci.yaml` into it.
+It will then trigger on every push. Note that this can easily consume lots of compute time. I am not responsible if the script acts up
+and uses a lot of compute. As a safety measure, I have put in a 10 minute timeout.
+
 Credits to Joakim Blikstad for having the idea for the Python script and writing the first version.
 
 Typical output (can be seen in the summary tab of the action in Github):
