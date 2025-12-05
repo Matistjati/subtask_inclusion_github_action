@@ -4,6 +4,7 @@
 # and report any potential testcases which could also be included in additional groups.
 # Mostly written by chatgpt...
 
+import sys
 import subprocess
 import os
 import yaml
@@ -15,26 +16,6 @@ import shutil
 from typing import Iterable, List, Any
 
 resource.setrlimit(resource.RLIMIT_AS, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
-
-class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    ORANGE = '\033[93m'
-    RESET = '\033[0m'
-
-def orange(text):
-    return f"{Colors.ORANGE}{text}{Colors.RESET}"
-def red(text):
-    return f"{Colors.RED}{text}{Colors.RESET}"
-def green(text):
-    return f"{Colors.GREEN}{text}{Colors.RESET}"
-
-COLOR_MAP_HTML = {
-    'OK:Y': 'green',
-    'OK:N': 'green',
-    'MISS': 'orange',
-    'BAD': 'red',
-}
 
 out_dir = 'output'
 out_path = Path(__file__).parent / out_dir
@@ -61,6 +42,12 @@ def write_pretty_output(line):
         with github_summary.open("a") as f:
             f.write(f"{line}\n")
 
+def get_problem_name(problem: Path) -> str:
+    problem_name = problem.name
+    parent = problem.parent.name
+    if parent != Path(__file__).parent.name:
+        problem_name = parent + '/' + problem_name
+    return problem_name
 
 def validate_problem(problem: Path):
     write_log(f"Validating problem: {problem}")
@@ -77,7 +64,8 @@ def validate_problem(problem: Path):
     if compile_process.returncode == 0:
         write_log("Compilation successful.")
     else:
-        write_pretty_output(f"## ❌ {problem} Validator Compilation Failed \n")
+        print(f"## ❌ {get_problem_name(problem)} Validator Compilation Failed \n")
+        write_pretty_output(f"## ❌ {get_problem_name(problem)} Validator Compilation Failed \n")
         write_log("Compilation failed:")
         write_log(compile_process.stderr)
         exit(0)
@@ -91,7 +79,7 @@ def validate_problem(problem: Path):
 
     def run_validator_and_print(file, flags, group):
         run_command =  [output_executable] + flags.split()
-        write_log(red("WARNING:"), os.path.basename(file), "not in", group)
+        write_log("❌ WARNING:", os.path.basename(file), "not in", group)
         write_log("flags:", flags)
         with open(file) as inp:
             run_process = subprocess.run(run_command, stdin=inp, capture_output=True, text=True)
@@ -216,33 +204,44 @@ def validate_problem(problem: Path):
         emoji = "⚠️"
     else:
         emoji = "✅"
-
-    problem_name = problem.name
-    parent = problem.parent.name
-    if parent != Path(__file__).parent.name:
-        problem_name = parent + '/' + problem_name
-    write_pretty_output(f"## {emoji} {problem_name}\n")
     
+    write_pretty_output(f"## {emoji} {get_problem_name(problem)}\n")
+
     if any_misses:
         num_misses = count_word_occurrences("MISS", removed_sample)
         p_misses = num_misses / (len(removed_sample)*len(groups)) * 100
-        write_pretty_output(f"### ⚠️ MISSES: {num_misses}, {p_misses:.2f}% of all checks. Not counting sample \"misses\"\n")
+        write_pretty_output(f"### ⚠️ MISSES: {num_misses}, {p_misses:.2f}% of all checks.\n")
+
+    if any_bads:
+        write_pretty_output(f"### ❌ BADS: {count_word_occurrences('BAD', data)}")
+
 
     headers = ['INPUT'] + groups
     write_pretty_output("<details>\n")
     write_pretty_output(print_table(data,headers))
     write_pretty_output("</details>\n")
     
-    if any_bads:
-        write_pretty_output(red("BADS:" + str(count_word_occurrences("BAD", data))))
-    if any_misses:
-        write_pretty_output(orange("MISSES:" + str(count_word_occurrences("MISS", removed_sample))))
-    
 
+def discover_problems(root: Path):
+    if root.is_file():
+        root = root.parent
+    candidates = [p.parent for p in root.rglob('problem.yaml')]
+    candidates = [p for p in candidates if "testdata_tools" not in str(p)]
+    return candidates
 
-def discover_problems():
-    base_path = Path(__file__).parent
-    return [p.parent for p in base_path.rglob('problem.yaml')]
+if len(sys.argv) > 1:
+    problems = discover_problems(Path(sys.argv[1]))
+else:
+    problems = discover_problems(Path(__file__))
 
-for problem in discover_problems():
+print(problems)
+num_problems = len(problems)
+print(f"Will check {num_problems} problems.")
+i=1
+for problem in problems:
+    print(f"Checking problem {i}/{num_problems}: {get_problem_name(problem)}")
     validate_problem(problem)
+    i += 1
+
+write_pretty_output("# NOTE:")
+write_pretty_output("We don't count sample \"misses\" in most statistics")
