@@ -2,10 +2,14 @@
 
 A Github action that checks the validity of the testdata in a [Kattis problem package](https://www.kattis.com/problem-package-format/spec/legacy.html).
 More specifically, for problems with groups representing subtasks, it runs each testcase with the flags in each group and checks if
-it could've been included in said group. If there are big columns of misses, this either means that you should include the testcases in said
-group using symlinks or `include_group` if you're using testdata_tools, or tighten your input validator. Of course, some subtask constraints are impossible
-to validate, such as "the input is generated uniformly at random", in which case you have to live with the false positive. The sample column will also frequently
-contain false positives.
+it could've been included in said group. If there are big columns of misses, this probably indicates one of these 4 things:
+- You missed a subtask inclusion.
+- Your input validator is not strict enough.
+- The group is missing max-cases.
+- It's the sample column, where you obviously don't need to worry.
+
+You can easily include subgroups with the command `include_group` if you're using testdata_tools. Of course, some subtask constraints are impossible
+to validate, such as "the input is generated uniformly at random", in which case you have to live with the false positive.
 
 To add this to your problem repository, simply create the file `.github/workflows/ci.yaml`, and copy the contents of `ci.yaml` into it.
 It will then trigger on every push. Note that this can easily consume lots of compute time. I am not responsible if the script acts up
