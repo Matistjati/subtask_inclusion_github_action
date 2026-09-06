@@ -18,6 +18,7 @@ This does happen in practice, as you might hand-craft small edgecases and then f
 
 This repo contains `check_subtask_inclusion.py`, a command-line utility that checks for missing subtask inclusions.
 It runs each testcase with the input validator flags in each group and checks if it could've been included in said group.
+Only has support for C++ input validators, validators with a `build` script or in other languages are ignored with a warning.
 If there are big columns of misses, this probably indicates one of these 3 things:
 - You missed a subtask inclusion.
 - Your input validator is not strict enough.

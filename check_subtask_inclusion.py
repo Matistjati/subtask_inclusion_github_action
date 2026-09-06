@@ -7,7 +7,10 @@ import subprocess
 import yaml
 import concurrent.futures
 import re
+import os
 import resource
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Iterable, List, Any
 import argparse
@@ -95,41 +98,88 @@ def get_problem_name(problem: Path) -> str:
         problem_name = parent + '/' + problem_name
     return problem_name
 
-def validate_problem(problem: Path):
-    # Discover the C++ input validator: any .cpp file inside input_validators/<name>/.
-    # Kattis allows the validator entry point to be named anything (e.g. validator.cpp,
-    # input_validator.cpp), so we glob instead of hardcoding the filename.
+# Discovery mirrors problemtools' run.find_programs on input_validators
+# Only C++ validators are compiled; everything else problemtools would run is warned about.
+CPP_SUFFIXES = {'.cc', '.C', '.cpp', '.cxx', '.c++'}
+# Extensions of the other languages in problemtools' languages.yaml.
+OTHER_LANGUAGE_SUFFIXES = {
+    '.c', '.cs', '.cob', '.fs', '.go', '.hs', '.java', '.js', '.kt', '.lisp', '.cl', '.ml', '.m',
+    '.pas', '.php', '.pl', '.py', '.py2', '.py3', '.rb', '.rs', '.sc', '.scala',
+}
+VALIDATION_SCRIPT_SUFFIXES = {'.viva', '.ctd'}
+
+def discover_validators(problem: Path):
+    """Find every C++ input validator of a problem.
+
+    Returns a list of (name, [C++ sources]) sorted by name.
+    """
     input_validators_dir = problem / "input_validators"
-    cpp_candidates = sorted(input_validators_dir.glob("*/*.cpp")) if input_validators_dir.is_dir() else []
-    if not cpp_candidates:
+    if not input_validators_dir.is_dir():
+        return []
+
+    validators = []
+    for entry in sorted(input_validators_dir.iterdir()):
+        rel = f"input_validators/{entry.name}"
+        if entry.is_dir():
+            build = entry / 'build'
+            if build.is_file() and os.access(build, os.X_OK):
+                print(orange(f"Ignoring validator {rel}/: build scripts are not supported"))
+                continue
+            files = sorted(f for f in entry.rglob('*') if f.is_file())
+            cpp_sources = [f for f in files if f.suffix in CPP_SUFFIXES]
+            if cpp_sources:
+                validators.append((entry.name, cpp_sources))
+            elif any(f.suffix in OTHER_LANGUAGE_SUFFIXES for f in files):
+                print(orange(f"Ignoring validator {rel}/: only C++ is supported"))
+        elif entry.is_file():
+            if entry.suffix in CPP_SUFFIXES:
+                validators.append((entry.stem, [entry]))
+            elif entry.suffix in VALIDATION_SCRIPT_SUFFIXES:
+                print(orange(f"Ignoring validator {rel}: {entry.suffix} validation scripts are not supported"))
+            elif entry.suffix in OTHER_LANGUAGE_SUFFIXES:
+                print(orange(f"Ignoring validator {rel}: only C++ is supported"))
+    return validators
+
+def validate_problem(problem: Path):
+    validators = discover_validators(problem)
+    if not validators:
         print_md_newline()
-        warning_text = f'Skipping {get_problem_name(problem)}: no C++ input validator found under input_validators/*/'
+        warning_text = f'Skipping {get_problem_name(problem)}: no C++ input validator found in input_validators/'
         print(f"{h2()}{orange(warning_text)}\n")
         return
 
-    # Compile every .cpp in the chosen validator directory so multi-file validators work.
-    validator_dir = cpp_candidates[0].parent
-    cpp_sources = sorted(validator_dir.glob("*.cpp"))
+    plural = '' if len(validators) == 1 else 's'
+    print(gray(f"Using {len(validators)} input validator{plural}: " + ', '.join(name for name, _ in validators)))
 
-    # Name of the output executable
-    output_executable = f'/tmp/validator_{problem.name}.out'
+    build_dir = tempfile.mkdtemp(prefix=f'validator_{problem.name}_')
+    try:
+        # Compile every validator; all of them must accept an input for it to count as valid.
+        executables = []
+        for name, cpp_sources in validators:
+            output_executable = str(Path(build_dir) / f'{name}.out')
+            compile_command = ['g++', '-O2', *[str(p) for p in cpp_sources], '-o', output_executable, '-std=c++20']
+            compile_process = subprocess.run(compile_command, capture_output=True, text=True)
+            if compile_process.returncode != 0:
+                print(f"{h2()}{red(f'Validator Compilation Failed ({name}):')}")
+                print(red(compile_process.stderr))
+                return
+            executables.append((name, output_executable))
 
-    # Compile the C++ file(s)
-    compile_command = ['g++', '-O2', *[str(p) for p in cpp_sources], '-o', output_executable, '-std=c++20']
-    compile_process = subprocess.run(compile_command, capture_output=True, text=True)
+        def run_validator(file, flags, group):
+            # Pass only if every validator returns 42.
+            for _name, executable in executables:
+                run_command = [executable] + flags.split()
+                with open(file) as inp:
+                    run_process = subprocess.run(run_command, stdin=inp, capture_output=True, text=True)
+                if run_process.returncode != 42:
+                    return False
+            return True
 
-    # Check if compilation was successful
-    if compile_process.returncode != 0:
-        print(f"{h2()}{red('Validator Compilation Failed:')}")
-        print(red(compile_process.stderr))
-        return
+        _validate_problem_data(problem, run_validator)
+    finally:
+        shutil.rmtree(build_dir, ignore_errors=True)
 
-    def run_validator(file, flags, group):
-        run_command = [output_executable] + flags.split()
-        with open(file) as inp:
-            run_process = subprocess.run(run_command, stdin=inp, capture_output=True, text=True)
-            return run_process.returncode == 42
-
+def _validate_problem_data(problem: Path, run_validator):
     group_to_flags = {}
     tc_to_groups = {}
     infiles_path = {}
